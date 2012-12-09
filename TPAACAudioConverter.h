@@ -20,7 +20,11 @@ enum {
 @protocol TPAACAudioConverterDelegate;
 @protocol TPAACAudioConverterDataSource;
 
-@interface TPAACAudioConverter : NSObject
+@interface TPAACAudioConverter : NSObject {
+	OSType			outputFormat;
+    Float64			outputSampleRate;
+	UInt32			encodeBitRate;
+}
 
 + (BOOL)AACConverterAvailable;
 
@@ -35,6 +39,10 @@ enum {
 @property (nonatomic, readonly, retain) NSString *source;
 @property (nonatomic, readonly, retain) NSString *destination;
 @property (nonatomic, readonly) AudioStreamBasicDescription audioFormat;
+
+@property (nonatomic, assign) OSType outputFormat;
+@property (nonatomic, assign) Float64 outputSampleRate;
+@property (nonatomic, assign) UInt32 encodeBitRate;
 @end
 
 

@@ -40,6 +40,7 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
 
 @implementation TPAACAudioConverter
 @synthesize source = _source, destination = _destination, delegate = _delegate, dataSource = _dataSource, audioFormat = _audioFormat;
+@synthesize outputFormat, outputSampleRate, encodeBitRate;
 
 + (BOOL)AACConverterAvailable {
 #if TARGET_IPHONE_SIMULATOR
@@ -85,6 +86,10 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
 - (id)initWithDelegate:(id<TPAACAudioConverterDelegate>)delegate source:(NSString*)source destination:(NSString*)destination {
     if ( !(self = [super init]) ) return nil;
     
+	outputFormat = kAudioFormatMPEG4AAC;
+//	outputSampleRate = 22050.0;
+//	encodeBitRate = 64000.0;
+	
     self.delegate = delegate;
     self.source = source;
     self.destination = destination;
@@ -190,6 +195,8 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     
     [[NSThread currentThread] setThreadPriority:0.9];
+	
+	UInt32 size;
     
     ExtAudioFileRef sourceFile = NULL;
     AudioStreamBasicDescription sourceFormat;
@@ -206,7 +213,7 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
         }
         
         
-        UInt32 size = sizeof(sourceFormat);
+        size = sizeof(sourceFormat);
         if ( !checkResult(ExtAudioFileGetProperty(sourceFile, kExtAudioFileProperty_FileDataFormat, &size, &sourceFormat), 
                           "ExtAudioFileGetProperty(kExtAudioFileProperty_FileDataFormat)") ) {
             [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
@@ -222,25 +229,55 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
         sourceFormat = _audioFormat;
     }
     
-    AudioStreamBasicDescription destinationFormat;
-    memset(&destinationFormat, 0, sizeof(destinationFormat));
-    destinationFormat.mChannelsPerFrame = sourceFormat.mChannelsPerFrame;
-    destinationFormat.mFormatID = kAudioFormatMPEG4AAC;
-    UInt32 size = sizeof(destinationFormat);
-    if ( !checkResult(AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &destinationFormat), 
-                      "AudioFormatGetProperty(kAudioFormatProperty_FormatInfo)") ) {
-        [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
-                               withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
-                                                              code:TPAACAudioConverterFormatError
-                                                          userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't setup destination format", @"Error message") forKey:NSLocalizedDescriptionKey]]
-                            waitUntilDone:NO];
-        [pool release];
-        _processing = NO;
-        return;
-    }
+	
+	// setup the output file format
+	AudioStreamBasicDescription destinationFormat;
+	memset(&destinationFormat, 0, sizeof(destinationFormat));
+	destinationFormat.mSampleRate = (outputSampleRate == 0 ? sourceFormat.mSampleRate : outputSampleRate);
+	if (outputFormat == kAudioFormatLinearPCM) {
+		// if PCM was selected as the destination format, create a 16-bit int PCM file format description
+		destinationFormat.mFormatID = outputFormat;
+		destinationFormat.mChannelsPerFrame = sourceFormat.mChannelsPerFrame;
+		destinationFormat.mBitsPerChannel = 16;
+		destinationFormat.mBytesPerPacket = destinationFormat.mBytesPerFrame = 2 * destinationFormat.mChannelsPerFrame;
+		destinationFormat.mFramesPerPacket = 1;
+		destinationFormat.mFormatFlags = kLinearPCMFormatFlagIsPacked | kLinearPCMFormatFlagIsSignedInteger; // little-endian
+	} else {
+		// compressed format - need to set at least format, sample rate and channel fields
+		destinationFormat.mFormatID = outputFormat;
+		destinationFormat.mChannelsPerFrame = (outputFormat == kAudioFormatiLBC ? 1 : sourceFormat.mChannelsPerFrame); // for iLBC num channels must be 1
+		
+		// use AudioFormat API to fill out the rest of the description
+		size = sizeof(destinationFormat);
+		if ( !checkResult(AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &destinationFormat),
+						  "AudioFormatGetProperty(kAudioFormatProperty_FormatInfo)") ) {
+			[self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
+								   withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
+																  code:TPAACAudioConverterFormatError
+															  userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't setup destination format", @"Error message") forKey:NSLocalizedDescriptionKey]]
+								waitUntilDone:NO];
+			[pool release];
+			_processing = NO;
+			return;
+		}
+	}
+    
     
     ExtAudioFileRef destinationFile;
-    if ( !checkResult(ExtAudioFileCreateWithURL((CFURLRef)[NSURL fileURLWithPath:_destination], kAudioFileM4AType, &destinationFormat, NULL, kAudioFileFlags_EraseFile, &destinationFile), "ExtAudioFileCreateWithURL") ) {
+	UInt32 fileType;
+	switch (outputFormat) {
+		case kAudioFormatMPEG4AAC:
+			fileType = kAudioFileM4AType;
+			break;
+		case kAudioFormatLinearPCM:
+			fileType = kAudioFileWAVEType;
+			break;
+		default:
+			// Don't really care about other formats that don't fall into CAF category as of now.
+			fileType = kAudioFileCAFType;
+			break;
+	}
+    if ( !checkResult(ExtAudioFileCreateWithURL((CFURLRef)[NSURL fileURLWithPath:_destination], fileType, &destinationFormat, NULL, kAudioFileFlags_EraseFile, &destinationFile), "ExtAudioFileCreateWithURL") ) {
         [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
                                withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
                                                               code:TPAACAudioConverterFileError
