@@ -24,6 +24,7 @@ enum {
 	OSType			outputFormat;
     Float64			outputSampleRate;
 	UInt32			encodeBitRate;
+    UInt32			outputChannels;
 }
 
 + (BOOL)AACConverterAvailable;
@@ -43,6 +44,7 @@ enum {
 @property (nonatomic, assign) OSType outputFormat;
 @property (nonatomic, assign) Float64 outputSampleRate;
 @property (nonatomic, assign) UInt32 encodeBitRate;
+@property (nonatomic, assign) UInt32 outputChannels;
 @end
 
 

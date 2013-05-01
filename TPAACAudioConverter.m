@@ -40,7 +40,7 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
 
 @implementation TPAACAudioConverter
 @synthesize source = _source, destination = _destination, delegate = _delegate, dataSource = _dataSource, audioFormat = _audioFormat;
-@synthesize outputFormat, outputSampleRate, encodeBitRate;
+@synthesize outputFormat, outputSampleRate, encodeBitRate, outputChannels;
 
 + (BOOL)AACConverterAvailable {
 #if TARGET_IPHONE_SIMULATOR
@@ -229,6 +229,9 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
         sourceFormat = _audioFormat;
     }
     
+    if (outputChannels == 0) {
+        outputChannels = sourceFormat.mChannelsPerFrame;
+    }
 	
 	// setup the output file format
 	AudioStreamBasicDescription destinationFormat;
@@ -237,7 +240,7 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
 	if (outputFormat == kAudioFormatLinearPCM) {
 		// if PCM was selected as the destination format, create a 16-bit int PCM file format description
 		destinationFormat.mFormatID = outputFormat;
-		destinationFormat.mChannelsPerFrame = sourceFormat.mChannelsPerFrame;
+		destinationFormat.mChannelsPerFrame = outputChannels;
 		destinationFormat.mBitsPerChannel = 16;
 		destinationFormat.mBytesPerPacket = destinationFormat.mBytesPerFrame = 2 * destinationFormat.mChannelsPerFrame;
 		destinationFormat.mFramesPerPacket = 1;
@@ -245,7 +248,7 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
 	} else {
 		// compressed format - need to set at least format, sample rate and channel fields
 		destinationFormat.mFormatID = outputFormat;
-		destinationFormat.mChannelsPerFrame = (outputFormat == kAudioFormatiLBC ? 1 : sourceFormat.mChannelsPerFrame); // for iLBC num channels must be 1
+		destinationFormat.mChannelsPerFrame = (outputFormat == kAudioFormatiLBC ? 1 : outputChannels); // for iLBC num channels must be 1
 		
 		// use AudioFormat API to fill out the rest of the description
 		size = sizeof(destinationFormat);
